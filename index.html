@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Real-time Bytebeat Visualizer</title>
+<style>
+body { background: #111; color: #0f0; font-family: monospace; text-align: center; margin:0; }
+header { background:#000; border-bottom:2px solid #0f0; padding:10px 0; font-size: 24px; font-weight:bold; }
+.container { margin:20px auto; width: 90%; max-width:1000px; }
+textarea { width:100%; min-height:80px; background:#000; color:#0f0; border:1px solid #0f0; padding:5px; font-family: monospace; box-sizing:border-box; }
+button { margin:5px; padding:8px 12px; font-size:14px; background:#0f0; color:#000; border:none; cursor:pointer; }
+button:hover { background:#0c0; }
+select, input[type=number], label { font-size:16px; padding:5px; margin-top:10px; background:#000; color:#0f0; border:1px solid #0f0; }
+canvas { display:block; margin:20px auto; background:#000; border:2px solid #0f0; width:95%; height:auto; max-height:50vh; }
+.controls { display:flex; justify-content: center; gap:15px; flex-wrap: wrap; margin-top:10px; }
+.examples { margin-top:10px; display:flex; flex-wrap: nowrap; justify-content:flex-start; gap:10px; overflow-x:auto; padding-bottom:5px; }
+.example-btn { display:flex; flex-direction:column; background:#222; color:#0f0; border:1px solid #0f0; padding:5px; cursor:pointer; font-size:12px; min-width:200px; }
+.example-btn:hover { background:#0c0; color:#000; }
+.example-btn span { font-size:10px; word-break:break-all; }
+</style>
+</head>
+<body>
+
+<header>Real-time Bytebeat Visualizer</header>
+<div class="container">
+<textarea id="formula">t&t>>8</textarea>
+
+<div class="controls">
+<button id="play">Play</button>
+<button id="stop">Stop</button>
+<label>Sample rate: <input type="number" id="rate" value="8000"></label>
+<label>Visual style: 
+<select id="visualStyle">
+    <option value="wave">Waveform</option>
+    <option value="bars">Bars</option>
+    <option value="circles">Circles</option>
+    <option value="lines">Lines</option>
+    <option value="sphere">Reactive Sphere</option>
+</select>
+</label>
+</div>
+
+<canvas id="canvas"></canvas>
+
+<div class="examples" id="examples"></div>
+</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+let audioCtx, t=0, scriptNode, latestBuffer = new Float32Array(0);
+let isPlaying = false;
+let formulaInput = "t&t>>8";
+let formulaFn = null;
+let visualStyle = "wave";
+
+const playBtn = document.getElementById("play");
+const stopBtn = document.getElementById("stop");
+stopBtn.disabled = true;
+
+document.getElementById("visualStyle").addEventListener("change", e => visualStyle=e.target.value);
+
+// Make canvas responsive
+function resizeCanvas() {
+    canvas.width = window.innerWidth * 0.95;
+    canvas.height = window.innerHeight * 0.5;
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+// compile formula
+function compileFormula(src) {
+    try {
+        const fn = new Function('t', 'return (' + src + ');');
+        formulaFn = fn;
+        formulaInput = src;
+        document.getElementById('formula').style.borderColor = "#0f0";
+        return true;
+    } catch (err) {
+        console.error('Formula compile error:', err);
+        formulaFn = null;
+        document.getElementById('formula').style.borderColor = "red";
+        return false;
+    }
+}
+
+// textarea binding
+const formulaEl = document.getElementById('formula');
+formulaEl.addEventListener('input', (e) => compileFormula(e.target.value));
+
+// Example buttons
+function addExample(name, formula){
+    const btn = document.createElement("div");
+    btn.className = "example-btn";
+    const title = document.createElement("div");
+    title.textContent = name;
+    const formulaText = document.createElement("span");
+    formulaText.textContent = formula;
+    btn.appendChild(title);
+    btn.appendChild(formulaText);
+    btn.addEventListener("click", ()=> { formulaEl.value = formula; compileFormula(formula); });
+    document.getElementById("examples").appendChild(btn);
+}
+
+// add all examples
+addExample("the nineth sound that plays in the salinewin gdi malware", "(t*((t&4096?t%65536<59392?7:t&7:16)^(1&t>>14))>>(3&-t>>(t&2048?2:10))|(t&16384?t&4096?10:3:2))");
+addExample("classic bytebeat chirp", "t*(((t>>12)|(t>>8))&(63&(t>>4)))");
+addExample("weird glitch melody", "(t*5&t>>7)|(t*3&t>>10)");
+addExample("salinewin beat 2", "((t>>2)*(t>>5)|t>>5)");
+addExample("salinewin beat 6", "(t*((t/2>>10|t%16*t>>8)&8*t>>12&18)|-t/(16)+64)");
+addExample("the 42 melody", "t*(42&t>>10)");
+addExample("The time is running out! (Use 11025 hz!)", "t*(t&16384?7:5)*(3-(3&t>>9)+(3&t>>8))>>(3&-t>>(t&4096?2:16))|t>>3");
+addExample("Neurofunk - Fist punch version", "t*((t&4096?t%65536<59392?7:t>>6:16)+(1&t>>14))>>(3&-t>>(t&2048?2:10))|t>>(t&16384?t&4096?4:3:2)");
+addExample("Oh the headaches", "t>>5|(t<<3)+12*t*(t>>13|(t>>1|t>>10|t>>2)&t>>8)");
+addExample("rickroll (fixed)", "(t%=125000,125E3<t?4.238*t:124375<t?.01*t:125E3<t?4.238*t:122500<t?4.757*t:12E4<t?3.364*t:118750<t?.01*t:115E3<t?3.364*t:113750<t?3.564*t:11E4<t?4*t:108750<t?.01*t:106250<t?4.757*t:105E3<t?.01*t:102500<t?4.238*t:101250<t?3.564*t:1E5<t?4.238*t:98750<t?3.564*t:97500<t?3.175*t:95E3<t?3.564*t:93750<t?4*t:91250<t?4.238*t:9E4<t?.01*t:87500<t?4.757*t:86250<t?.01*t:83750<t?4.757*t:82500<t?3.564*t:81250<t?4.238*t:8E4<t?3.564*t:78750<t?3.175*t:77500<t?.01*t:72500<t?4.757*t:71250<t?.01*t:68750<t?5.339*t:67500<t?.01*t:65E3<t?5.339*t:63750<t?3.564*t:62500<t?4.238*t:61250<t?3.564*t:6E4<t?3.175*t:52500<t?3.175*t:45E3<t?4.757*t:36250<t?4.283*t:35E3<t?5.339*t:33750<t?5.657*t:32500<t?6.35*t:25E3<t?5.656*t:2E4<t?5.04*t:18500<t?3.36*t:7500<t?5.04*t:4.236*t)");
+
+// compile default
+compileFormula(formulaInput);
+
+// Bytebeat play
+function playBytebeat() {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const rate = Number(document.getElementById("rate").value) || 8000;
+    const tStep = rate / audioCtx.sampleRate;
+    isPlaying = true;
+
+    scriptNode = audioCtx.createScriptProcessor(2048, 0, 1);
+    scriptNode.onaudioprocess = function(e) {
+        const output = e.outputBuffer.getChannelData(0);
+        for(let i=0;i<output.length;i++){
+            let val = 128;
+            try{
+                if(typeof formulaFn === 'function'){
+                    const out = formulaFn(Math.floor(t));
+                    val = Number(out) || 0;
+                } else { val = 128; }
+            } catch(err){ val = 128; }
+            output[i] = ((val & 255) - 128) / 128;
+            t += tStep;
+        }
+        latestBuffer = output.slice();
+    };
+    scriptNode.connect(audioCtx.destination);
+    requestAnimationFrame(drawVisuals);
+}
+
+function stopBytebeat() {
+    isPlaying = false;
+    t = 0;
+    latestBuffer = new Float32Array(0);
+    if(scriptNode){ scriptNode.disconnect(); scriptNode=null; }
+    if(audioCtx){ audioCtx.close(); audioCtx=null; }
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+}
+
+// Visuals
+function drawWave(channel){
+    const w=canvas.width, h=canvas.height;
+    ctx.fillStyle="#000"; ctx.fillRect(0,0,w,h);
+    ctx.strokeStyle="#0f0"; ctx.beginPath();
+    for(let i=0;i<channel.length;i++){
+        const x = i/channel.length*w;
+        const y = h/2 - channel[i]*h/2;
+        if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    }
+    ctx.stroke();
+}
+
+function drawBars(channel){
+    const w=canvas.width, h=canvas.height;
+    ctx.fillStyle="#000"; ctx.fillRect(0,0,w,h);
+    const barWidth = w/channel.length;
+    for(let i=0;i<channel.length;i+=4){
+        const val = channel[i];
+        const y = (val+1)/2*h;
+        ctx.fillStyle=`rgb(${(val+1)*128},${255-(val+1)*128},100)`;
+        ctx.fillRect(i*barWidth,h-y,barWidth,y);
+    }
+}
+
+function drawCircles(channel){
+    const w=canvas.width, h=canvas.height;
+    ctx.fillStyle="rgba(0,0,0,0.05)"; ctx.fillRect(0,0,w,h);
+    for(let i=0;i<channel.length;i+=16){
+        const val = channel[i];
+        const size = Math.abs(val*h/4)+2;
+        const x = Math.random()*w;
+        const y = Math.random()*h;
+        ctx.beginPath(); ctx.arc(x,y,size,0,Math.PI*2);
+        ctx.fillStyle=`rgb(${(val+1)*128},${255-(val+1)*128},200)`; ctx.fill();
+    }
+}
+
+function drawLines(channel){
+    const w=canvas.width, h=canvas.height;
+    ctx.fillStyle="rgba(0,0,0,0.1)"; ctx.fillRect(0,0,w,h);
+    ctx.strokeStyle="#0f0"; ctx.beginPath();
+    for(let i=0;i<channel.length;i+=4){
+        const val = channel[i];
+        const x = i/channel.length*w;
+        const y = h/2 - val*h/2;
+        if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    }
+    ctx.stroke();
+}
+
+function drawReactiveSphere(channel){
+    const w=canvas.width, h=canvas.height;
+    ctx.fillStyle = "rgba(0,0,0,0.1)"; ctx.fillRect(0,0,w,h);
+    let sum=0, sum2=0;
+    for(let i=0;i<channel.length;i++){ sum+=Math.abs(channel[i]); sum2+=channel[i]*channel[i]; }
+    const avg=sum/channel.length;
+    const energy=sum2/channel.length;
+    const cx=w/2, cy=h/2;
+    const baseSize = 80 + avg*120 + Math.sin(t*0.05)*30 + energy*200;
+
+    for(let i=0;i<3;i++){
+        ctx.beginPath();
+        const grad = ctx.createRadialGradient(cx, cy, baseSize*0.2*(i+1), cx, cy, baseSize*(1+0.2*i));
+        grad.addColorStop(0, `hsl(${(t*4+i*120)%360},100%,${50+avg*30}%)`);
+        grad.addColorStop(1,"rgba(0,0,0,0)");
+        ctx.fillStyle = grad;
+        ctx.arc(cx, cy, baseSize*(1+0.2*i),0,Math.PI*2); ctx.fill();
+    }
+
+    const particleCount = Math.floor(Math.max(6, avg*200 + energy*50));
+    for(let i=0;i<particleCount;i++){
+        const angle=Math.random()*Math.PI*2;
+        const radius=Math.random()*baseSize*0.7*(0.5+avg);
+        const px=cx+Math.cos(angle)*radius;
+        const py=cy+Math.sin(angle)*radius;
+        ctx.fillStyle=`hsl(${(t*4+i*15)%360},100%,${60 + avg*20}%)`;
+        ctx.fillRect(px,py,2.5,2.5);
+    }
+
+    const orbitCount=30+Math.floor(avg*80);
+    for(let i=0;i<orbitCount;i++){
+        const angle=(i/orbitCount)*Math.PI*2+t*0.02;
+        const orbitRadius=baseSize*1.2+Math.sin(t*0.05+i)*20*avg;
+        const x=cx+Math.cos(angle)*orbitRadius;
+        const y=cy+Math.sin(angle)*orbitRadius;
+        ctx.beginPath();
+        ctx.moveTo(cx+Math.cos(angle)*(baseSize*0.9), cy+Math.sin(angle)*(baseSize*0.9));
+        ctx.lineTo(x,y);
+        ctx.strokeStyle=`hsl(${(t*5+i*7)%360},100%,${60+avg*20}%)`;
+        ctx.lineWidth=1+avg*2; ctx.stroke();
+    }
+}
+
+function drawVisuals(){
+    if(!isPlaying) return;
+    switch(visualStyle){
+        case "wave": drawWave(latestBuffer); break;
+        case "bars": drawBars(latestBuffer); break;
+        case "circles": drawCircles(latestBuffer); break;
+        case "lines": drawLines(latestBuffer); break;
+        case "sphere": drawReactiveSphere(latestBuffer); break;
+    }
+    t += 1/60;
+    requestAnimationFrame(drawVisuals);
+}
+
+// Play/Stop
+playBtn.addEventListener("click", ()=>{
+    playBtn.disabled = true;
+    stopBtn.disabled = false;
+    playBytebeat();
+});
+stopBtn.addEventListener("click", ()=>{
+    stopBytebeat();
+    playBtn.disabled = false;
+    stopBtn.disabled = true;
+});
+</script>
+</body>
+</html>
